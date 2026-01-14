@@ -32,3 +32,7 @@ class DirectBmsMDeltaHeartbeatPack(RawData):
     input_watts: Annotated[int, "I", "inputWatts"]
     output_watts: Annotated[int, "I", "outputWatts"]
     remain_time: Annotated[int, "I", "remainTime"]
+
+
+class DirectBmsMHeartbeatPack(DirectBmsMDeltaHeartbeatPack):
+    pass
