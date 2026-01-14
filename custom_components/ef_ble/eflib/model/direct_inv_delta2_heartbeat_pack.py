@@ -2,6 +2,7 @@ from typing import Annotated
 
 from .base import RawData
 
+
 class DirectInvDelta2HeartbeatPack(RawData):
     err_code: Annotated[bytes, "4s", "errCode"]
     sys_ver: Annotated[bytes, "4s", "sysVer"]

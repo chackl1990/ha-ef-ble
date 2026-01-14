@@ -52,7 +52,6 @@ class Device(DeviceBase, RawDataProps):
     dc12v_output_voltage = raw_field(pb_mppt.car_out_vol, lambda x: round(x / 1000, 2))
     dc12v_output_current = raw_field(pb_mppt.car_out_amp, lambda x: round(x / 1000, 2))
 
-    
     ac_ports = raw_field(pb_pd.cfg_ac_enabled, lambda x: x == 1)
 
     def __init__(self, ble_dev, adv_data, sn: str) -> None:
