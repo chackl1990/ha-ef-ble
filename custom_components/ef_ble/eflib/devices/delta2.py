@@ -142,5 +142,6 @@ class Device(DeviceBase, RawDataProps):
                 return
 
         self._product_type = detail.kit_base_info[0].product_type
+
     def _dc_12v_dst(self) -> int:
         return 0x07 if self._product_type == 82 else 0x05
