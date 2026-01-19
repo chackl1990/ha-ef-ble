@@ -4,7 +4,6 @@ from ..model import (
     DirectBmsMDeltaHeartbeatPack,
     DirectEmsDeltaHeartbeatPack,
     DirectInvDelta2HeartbeatPack,
-    DirectMpptHeartbeatPack,
     Mr330MpptHeart,
     Mr330PdHeart,
 )
