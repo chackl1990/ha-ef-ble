@@ -2,19 +2,22 @@ from ..devicebase import DeviceBase
 from ..model import (
     AllKitDetailData,
     DirectBmsMDeltaHeartbeatPack,
+    DirectBmsMHeartbeatPack,
     DirectEmsDeltaHeartbeatPack,
     DirectInvDelta2HeartbeatPack,
     Mr330MpptHeart,
     Mr330PdHeart,
 )
 from ..packet import Packet
+from ..props import Field
 from ..props.raw_data_field import dataclass_attr_mapper, raw_field
 from ..props.raw_data_props import RawDataProps
 
 pb_pd = dataclass_attr_mapper(Mr330PdHeart)
 pb_mppt = dataclass_attr_mapper(Mr330MpptHeart)
 pb_ems = dataclass_attr_mapper(DirectEmsDeltaHeartbeatPack)
-pb_bms = dataclass_attr_mapper(DirectBmsMDeltaHeartbeatPack)
+pb_bms_master = dataclass_attr_mapper(DirectBmsMDeltaHeartbeatPack)
+pb_bms_slave = dataclass_attr_mapper(DirectBmsMHeartbeatPack)
 pb_inv = dataclass_attr_mapper(DirectInvDelta2HeartbeatPack)
 
 
@@ -32,7 +35,19 @@ class Device(DeviceBase, RawDataProps):
     ac_input_power = raw_field(pb_pd.ac_input_watts)
     plugged_in_ac = raw_field(pb_pd.ac_charge_flag, lambda x: x == 1)
 
-    battery_level = raw_field(pb_bms.f32_show_soc, lambda x: round(x, 2))
+    battery_level_main = raw_field(pb_bms_master.f32_show_soc, lambda x: round(x, 2))
+    battery_level_slave = raw_field(pb_bms_slave.f32_show_soc, lambda x: round(x, 2))
+    battery_level = Field[float]()
+    master_design_cap = raw_field(pb_bms_master.design_cap)
+    master_remain_cap = raw_field(pb_bms_master.remain_cap)
+    master_full_cap = raw_field(pb_bms_master.full_cap)
+    slave_design_cap = raw_field(pb_bms_slave.design_cap)
+    slave_remain_cap = raw_field(pb_bms_slave.remain_cap)
+    slave_full_cap = raw_field(pb_bms_slave.full_cap)
+    battery_addon = Field[bool]()
+
+    energy_backup_battery_level = raw_field(pb_pd.bp_power_soc)
+
     input_power = raw_field(pb_pd.watts_in_sum)
     output_power = raw_field(pb_pd.watts_out_sum)
 
@@ -51,11 +66,16 @@ class Device(DeviceBase, RawDataProps):
     dc12v_output_voltage = raw_field(pb_mppt.car_out_vol, lambda x: round(x / 1000, 2))
     dc12v_output_current = raw_field(pb_mppt.car_out_amp, lambda x: round(x / 1000, 2))
 
+    ac_charging_speed = raw_field(pb_mppt.cfg_chg_watts)
+    max_ac_charging_power = Field[int]()
+
     ac_ports = raw_field(pb_pd.cfg_ac_enabled, lambda x: x == 1)
 
     def __init__(self, ble_dev, adv_data, sn: str) -> None:
         super().__init__(ble_dev, adv_data, sn)
         self._product_type: int | None = None
+        self.max_ac_charging_power = 1200
+        self.battery_addon = False
 
     @classmethod
     def check(cls, sn):
@@ -93,12 +113,21 @@ class Device(DeviceBase, RawDataProps):
             case 0x03, 0x20, 0x32:
                 self.update_from_bytes(DirectBmsMDeltaHeartbeatPack, packet.payload)
                 processed = True
+            case 0x06, 0x20, 0x32:
+                self._slave_bms_msg = self.update_from_bytes(
+                    DirectBmsMHeartbeatPack, packet.payload
+                )
+                processed = True
             case 0x04, _, 0x02:
                 self.update_from_bytes(DirectInvDelta2HeartbeatPack, packet.payload)
                 processed = True
             case 0x05, 0x20, 0x02:
                 self.update_from_bytes(Mr330MpptHeart, packet.payload)
                 processed = True
+
+        if processed:
+            self._update_battery_level()
+            self._update_ac_chg_limits()
 
         for field_name in self.updated_fields:
             self.update_callback(field_name)
@@ -112,6 +141,36 @@ class Device(DeviceBase, RawDataProps):
 
     async def set_battery_charge_limit_min(self, limit: int):
         packet = Packet(0x21, 0x03, 0x20, 0x33, limit.to_bytes(), version=0x02)
+        await self._conn.sendPacket(packet)
+
+    async def set_ac_charging_speed(self, value: int):
+        if self.max_ac_charging_power is None:
+            return
+
+        value = max(1, min(value, self.max_ac_charging_power))
+        # Sending 0 sets to (more than) max-load - better safe
+
+        if self._product_type_82():
+            payload = bytes([0xFF, 0xFF]) + self._to_le16(value) + bytes([0xFF])
+        else:
+            payload = self._to_le16(value) + bytes([0xFF])
+
+        packet = Packet(0x21, self._ac_speed_dst(), 0x20, 0x45, payload, version=0x02)
+        await self._conn.sendPacket(packet)
+
+    async def set_energy_backup_battery_level(self, value: int):
+        if (
+            self.battery_charge_limit_min is None
+            or self.battery_charge_limit_max is None
+        ):
+            return
+
+        value = max(
+            self.battery_charge_limit_min,
+            min(value, self.battery_charge_limit_max),
+        )
+        payload = bytes([0x01]) + value.to_bytes() + bytes([0x00, 0x00])
+        packet = Packet(0x21, 0x02, 0x20, 0x5E, payload, version=0x02)
         await self._conn.sendPacket(packet)
 
     async def enable_usb_ports(self, enabled: bool):
@@ -141,5 +200,37 @@ class Device(DeviceBase, RawDataProps):
 
         self._product_type = detail.kit_base_info[0].product_type
 
+    def _update_ac_chg_limits(self) -> None:
+        if self.battery_addon:
+            self.max_ac_charging_power = 1500
+        else:
+            self.max_ac_charging_power = 1200
+
+    def _product_type_82(self) -> bool:
+        return self._product_type == 82
+
+    def _ac_speed_dst(self) -> int:
+        return 0x04 if self._product_type_82() else 0x05
+
     def _dc_12v_dst(self) -> int:
-        return 0x07 if self._product_type == 82 else 0x05
+        return 0x07 if self._product_type_82() else 0x05
+
+    def _update_battery_level(self) -> None:
+        if self.battery_addon != (self.battery_level_slave is not None):
+            self.battery_addon = self.battery_level_slave is not None
+            self._update_ac_chg_limits()
+
+        if self.battery_addon:
+            total_full = (self.master_full_cap or 0) + (self.slave_full_cap or 0)
+            master_remain = self.master_full_cap * (self.battery_level_main / 100)
+            slave_remain = self.slave_full_cap * (self.battery_level_slave / 100)
+            total_remain = (master_remain or 0) + (slave_remain or 0)
+            self.battery_level = round((total_remain / total_full) * 100, 2)
+        else:
+            self.battery_level = self.battery_level_main
+
+    @staticmethod
+    def _to_le16(value: int) -> bytes:
+        # clamp to 0..65535
+        value = min(max(value, 0), 0xFFFF)
+        return value.to_bytes(2, byteorder="little", signed=False)
