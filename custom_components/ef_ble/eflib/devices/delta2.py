@@ -17,15 +17,11 @@ class _BmsHeartbeatBattery1(DirectBmsMDeltaHeartbeatPack):
     pass
 
 
-class _BmsHeartbeatBattery2(DirectBmsMDeltaHeartbeatPack):
-    pass
-
-
 pb_pd = dataclass_attr_mapper(Mr330PdHeart)
 pb_mppt = dataclass_attr_mapper(Mr330MpptHeart)
 pb_ems = dataclass_attr_mapper(DirectEmsDeltaHeartbeatPack)
-pb_bms_master = dataclass_attr_mapper(_BmsHeartbeatBattery1)
-pb_bms_slave = dataclass_attr_mapper(_BmsHeartbeatBattery2)
+pb_bms = dataclass_attr_mapper(DirectBmsMDeltaHeartbeatPack)
+pb_bms_1 = dataclass_attr_mapper(_BmsHeartbeatBattery1)
 pb_inv = dataclass_attr_mapper(DirectInvDelta2HeartbeatPack)
 
 
@@ -43,19 +39,17 @@ class Device(DeviceBase, RawDataProps):
     ac_input_power = raw_field(pb_pd.ac_input_watts)
     plugged_in_ac = raw_field(pb_pd.ac_charge_flag, lambda x: x == 1)
 
-    battery_level_main = raw_field(pb_bms_master.f32_show_soc, lambda x: round(x, 2))
-    battery_1_battery_level = raw_field(
-        pb_bms_slave.f32_show_soc, lambda x: round(x, 2)
-    )
+    battery_level_main = raw_field(pb_bms.f32_show_soc, lambda x: round(x, 2))
+    battery_1_battery_level = raw_field(pb_bms_1.f32_show_soc, lambda x: round(x, 2))
     # battery_level = Field[float]()
     battery_level = raw_field(pb_ems.f32_lcd_show_soc, lambda x: round(x, 2))
 
-    master_design_cap = raw_field(pb_bms_master.design_cap)
-    master_remain_cap = raw_field(pb_bms_master.remain_cap)
-    master_full_cap = raw_field(pb_bms_master.full_cap)
-    slave_design_cap = raw_field(pb_bms_slave.design_cap)
-    slave_remain_cap = raw_field(pb_bms_slave.remain_cap)
-    slave_full_cap = raw_field(pb_bms_slave.full_cap)
+    master_design_cap = raw_field(pb_bms.design_cap)
+    master_remain_cap = raw_field(pb_bms.remain_cap)
+    master_full_cap = raw_field(pb_bms.full_cap)
+    slave_design_cap = raw_field(pb_bms_1.design_cap)
+    slave_remain_cap = raw_field(pb_bms_1.remain_cap)
+    slave_full_cap = raw_field(pb_bms_1.full_cap)
     battery_addon = Field[bool]()
 
     energy_backup_battery_level = raw_field(pb_pd.bp_power_soc)
@@ -123,10 +117,10 @@ class Device(DeviceBase, RawDataProps):
                 self.update_from_bytes(DirectEmsDeltaHeartbeatPack, packet.payload)
                 processed = True
             case 0x03, 0x20, 0x32:
-                self.update_from_bytes(_BmsHeartbeatBattery1, packet.payload)
+                self.update_from_bytes(DirectBmsMDeltaHeartbeatPack, packet.payload)
                 processed = True
             case 0x06, 0x20, 0x32:
-                self.update_from_bytes(_BmsHeartbeatBattery2, packet.payload)
+                self.update_from_bytes(_BmsHeartbeatBattery1, packet.payload)
                 processed = True
             case 0x04, _, 0x02:
                 self.update_from_bytes(DirectInvDelta2HeartbeatPack, packet.payload)
