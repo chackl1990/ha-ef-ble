@@ -12,11 +12,20 @@ from ..props import Field
 from ..props.raw_data_field import dataclass_attr_mapper, raw_field
 from ..props.raw_data_props import RawDataProps
 
+
+class _BmsHeartbeatBattery1(DirectBmsMDeltaHeartbeatPack):
+    pass
+
+
+class _BmsHeartbeatBattery2(DirectBmsMDeltaHeartbeatPack):
+    pass
+
+
 pb_pd = dataclass_attr_mapper(Mr330PdHeart)
 pb_mppt = dataclass_attr_mapper(Mr330MpptHeart)
 pb_ems = dataclass_attr_mapper(DirectEmsDeltaHeartbeatPack)
-pb_bms_master = dataclass_attr_mapper(DirectBmsMDeltaHeartbeatPack)
-pb_bms_slave = dataclass_attr_mapper(DirectBmsMDeltaHeartbeatPack)
+pb_bms_master = dataclass_attr_mapper(_BmsHeartbeatBattery1)
+pb_bms_slave = dataclass_attr_mapper(_BmsHeartbeatBattery2)
 pb_inv = dataclass_attr_mapper(DirectInvDelta2HeartbeatPack)
 
 
@@ -114,10 +123,10 @@ class Device(DeviceBase, RawDataProps):
                 self.update_from_bytes(DirectEmsDeltaHeartbeatPack, packet.payload)
                 processed = True
             case 0x03, 0x20, 0x32:
-                self.update_from_bytes(DirectBmsMDeltaHeartbeatPack, packet.payload)
+                self.update_from_bytes(_BmsHeartbeatBattery1, packet.payload)
                 processed = True
             case 0x06, 0x20, 0x32:
-                self.update_from_bytes(DirectBmsMDeltaHeartbeatPack, packet.payload)
+                self.update_from_bytes(_BmsHeartbeatBattery2, packet.payload)
                 processed = True
             case 0x04, _, 0x02:
                 self.update_from_bytes(DirectInvDelta2HeartbeatPack, packet.payload)
@@ -127,7 +136,9 @@ class Device(DeviceBase, RawDataProps):
                 processed = True
 
         if processed:
-            # self._update_battery_level()
+            if self.battery_1_battery_level is not None:
+                self.battery_addon = True
+
             self._update_ac_chg_limits()
 
         for field_name in self.updated_fields:
@@ -136,13 +147,13 @@ class Device(DeviceBase, RawDataProps):
 
         return processed
 
-    # async def set_battery_charge_limit_max(self, limit: int):
-    #    packet = Packet(0x21, 0x03, 0x20, 0x31, limit.to_bytes(), version=0x02)
-    #    await self._conn.sendPacket(packet)
+    async def set_battery_charge_limit_max(self, limit: int):
+        packet = Packet(0x21, 0x03, 0x20, 0x31, limit.to_bytes(), version=0x02)
+        await self._conn.sendPacket(packet)
 
-    # async def set_battery_charge_limit_min(self, limit: int):
-    #    packet = Packet(0x21, 0x03, 0x20, 0x33, limit.to_bytes(), version=0x02)
-    #    await self._conn.sendPacket(packet)
+    async def set_battery_charge_limit_min(self, limit: int):
+        packet = Packet(0x21, 0x03, 0x20, 0x33, limit.to_bytes(), version=0x02)
+        await self._conn.sendPacket(packet)
 
     async def set_ac_charging_speed(self, value: int):
         if self.max_ac_charging_power is None:
@@ -151,8 +162,7 @@ class Device(DeviceBase, RawDataProps):
         value = max(1, min(value, self.max_ac_charging_power))
         # Sending 0 sets to (more than) max-load - better safe
 
-        value = value.to_bytes(2, "little")
-        payload = bytes([value, 0xFF])
+        payload = value.to_bytes(2, "little") + bytes([0xFF])
         if self._is_mr530():
             payload = bytes([0xFF, 0xFF]) + payload
 
@@ -177,7 +187,7 @@ class Device(DeviceBase, RawDataProps):
             self.battery_charge_limit_min,
             min(value, self.battery_charge_limit_max),
         )
-        payload = bytes([0x01, value, 0x00, 0x00])
+        payload = bytes([0x01]) + value.to_bytes() + bytes([0x00, 0x00])
         packet = Packet(0x21, 0x02, 0x20, 0x5E, payload, version=0x02)
         await self._conn.sendPacket(packet)
 
@@ -221,17 +231,3 @@ class Device(DeviceBase, RawDataProps):
 
     def _is_mr530(self) -> bool:
         return self._product_type == 82
-
-    def _update_battery_level(self) -> None:
-        if self.battery_1_battery_level is not None:
-            self.battery_addon = True
-            self._update_ac_chg_limits()
-
-        if self.battery_addon:
-            total_full = (self.master_full_cap or 0) + (self.slave_full_cap or 0)
-            master_remain = self.master_full_cap * (self.battery_level_main / 100)
-            slave_remain = self.slave_full_cap * (self.battery_1_battery_level / 100)
-            total_remain = (master_remain or 0) + (slave_remain or 0)
-            self.battery_level = round((total_remain / total_full) * 100, 2)
-        else:
-            self.battery_level = self.battery_level_main

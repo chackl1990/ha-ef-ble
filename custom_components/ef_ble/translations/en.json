@@ -279,27 +279,6 @@
       "battery_level_main": {
         "name": "Main Battery Level"
       },
-      "battery_level_slave": {
-        "name": "Slave Battery Level"
-      },
-      "master_design_cap": {
-        "name": "Main Battery Design Capacity"
-      },
-      "master_remain_cap": {
-        "name": "Main Battery Remaining Capacity"
-      },
-      "master_full_cap": {
-        "name": "Main Battery Full Capacity"
-      },
-      "slave_design_cap": {
-        "name": "Slave Battery Design Capacity"
-      },
-      "slave_remain_cap": {
-        "name": "Slave Battery Remaining Capacity"
-      },
-      "slave_full_cap": {
-        "name": "Slave Battery Full Capacity"
-      },
       "input_power": {
         "name": "Input Power"
       },
