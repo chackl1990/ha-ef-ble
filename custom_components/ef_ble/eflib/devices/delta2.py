@@ -38,7 +38,7 @@ class Device(DeviceBase, RawDataProps):
     battery_1_battery_level = raw_field(
         pb_bms_slave.f32_show_soc, lambda x: round(x, 2)
     )
-    #battery_level = Field[float]()
+    # battery_level = Field[float]()
     battery_level = raw_field(pb_ems.f32_lcd_show_soc, lambda x: round(x, 2))
 
     master_design_cap = raw_field(pb_bms_master.design_cap)
@@ -127,7 +127,7 @@ class Device(DeviceBase, RawDataProps):
                 processed = True
 
         if processed:
-            #self._update_battery_level()
+            # self._update_battery_level()
             self._update_ac_chg_limits()
 
         for field_name in self.updated_fields:
@@ -136,11 +136,11 @@ class Device(DeviceBase, RawDataProps):
 
         return processed
 
-    #async def set_battery_charge_limit_max(self, limit: int):
+    # async def set_battery_charge_limit_max(self, limit: int):
     #    packet = Packet(0x21, 0x03, 0x20, 0x31, limit.to_bytes(), version=0x02)
     #    await self._conn.sendPacket(packet)
 
-    #async def set_battery_charge_limit_min(self, limit: int):
+    # async def set_battery_charge_limit_min(self, limit: int):
     #    packet = Packet(0x21, 0x03, 0x20, 0x33, limit.to_bytes(), version=0x02)
     #    await self._conn.sendPacket(packet)
 
