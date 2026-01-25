@@ -150,10 +150,10 @@ class Device(DeviceBase, RawDataProps):
         value = max(1, min(value, self.max_ac_charging_power))
         # Sending 0 sets to (more than) max-load - better safe
 
+        value = value.to_bytes(2, "little")
+        payload = bytes([ value, 0xFF])
         if self._product_type_82():
-            payload = bytes([0xFF, 0xFF]) + self._to_le16(value) + bytes([0xFF])
-        else:
-            payload = self._to_le16(value) + bytes([0xFF])
+            payload = bytes([0xFF, 0xFF]) + payload
 
         packet = Packet(0x21, self._ac_speed_dst(), 0x20, 0x45, payload, version=0x02)
         await self._conn.sendPacket(packet)
